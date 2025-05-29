@@ -1,10 +1,12 @@
 package com.mygame;
 
 import com.jme3.app.SimpleApplication;
+import com.jme3.asset.TextureKey;
 import com.jme3.bullet.BulletAppState;
 import com.jme3.bullet.control.BetterCharacterControl;
 import com.jme3.bullet.control.RigidBodyControl;
 import com.jme3.collision.CollisionResults;
+import com.jme3.font.BitmapText;
 import com.jme3.input.KeyInput;
 import com.jme3.input.MouseInput;
 import com.jme3.input.controls.ActionListener;
@@ -18,6 +20,7 @@ import com.jme3.scene.Geometry;
 import com.jme3.scene.Node;
 import com.jme3.scene.Spatial;
 import com.jme3.scene.shape.Box;
+import com.jme3.texture.Texture;
 import com.simsilica.lemur.Button;
 import com.simsilica.lemur.Container;
 import com.simsilica.lemur.GuiGlobals;
@@ -46,12 +49,20 @@ public class Main extends SimpleApplication {
 
     @Override
     public void simpleInitApp() {
+        flyCam.setEnabled(true);
         flyCam.setMoveSpeed(10f);
+        flyCam.setDragToRotate(false);
+        inputManager.setCursorVisible(true);
+
         bulletAppState = new BulletAppState();
         stateManager.attach(bulletAppState);
 
+        GuiGlobals.initialize(this);
+        GuiGlobals.getInstance().getStyles().setDefaultStyle("default");
+
         initKeys();
         initLemur();
+        addCrosshair();
         createPlayer();
         resetGame();
     }
@@ -93,6 +104,7 @@ public class Main extends SimpleApplication {
         playerHealth = 100;
         initLemur();
         updateHUD();
+        addCrosshair();
     }
 
     private void initKeys() {
@@ -130,17 +142,24 @@ public class Main extends SimpleApplication {
             if (enemies.contains(hit)) {
                 rootNode.detachChild(hit);
                 enemies.remove(hit);
+                if (enemies.isEmpty()) {
+                    showVictory();
+                }
             }
         }
     }
 
     private void spawnEnemy(float offsetZ) {
-        Box box = new Box(1, 1, 1);
+        Box box = new Box(1, 2, 1); // Enemigos más altos
         Geometry enemy = new Geometry("Enemy", box);
+
         Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
-        mat.setColor("Color", ColorRGBA.Red);
+        TextureKey key = new TextureKey("Textures/Ghost.jpg", false); // Cambia el nombre si usas otra imagen
+        Texture tex = assetManager.loadTexture(key);
+        mat.setTexture("ColorMap", tex);
         enemy.setMaterial(mat);
-        enemy.setLocalTranslation(new Vector3f(0, 1, -10 - offsetZ));
+
+        enemy.setLocalTranslation(new Vector3f(0, 2, -10 - offsetZ));
         rootNode.attachChild(enemy);
         enemies.add(enemy);
     }
@@ -176,9 +195,6 @@ public class Main extends SimpleApplication {
     }
 
     private void initLemur() {
-        GuiGlobals.initialize(this);
-        GuiGlobals.getInstance().getStyles().setDefaultStyle("default");
-
         hudContainer = new Container();
         guiNode.attachChild(hudContainer);
         hudContainer.setLocalTranslation(10, cam.getHeight() - 10, 0);
@@ -194,7 +210,7 @@ public class Main extends SimpleApplication {
         guiNode.attachChild(gameOverContainer);
         gameOverContainer.setLocalTranslation(cam.getWidth() / 2f - 100, cam.getHeight() / 2f + 50, 0);
 
-        Label gameOverLabel = gameOverContainer.addChild(new Label("\u00a1Has perdido!"));
+        Label gameOverLabel = gameOverContainer.addChild(new Label("¡Has perdido!"));
         gameOverLabel.setFontSize(30);
         gameOverLabel.setColor(ColorRGBA.Red);
 
@@ -202,7 +218,33 @@ public class Main extends SimpleApplication {
         retryButton.addClickCommands((Button btn) -> restartGame());
     }
 
+    private void showVictory() {
+        Container victoryContainer = new Container();
+        guiNode.attachChild(victoryContainer);
+        victoryContainer.setLocalTranslation(cam.getWidth() / 2f - 100, cam.getHeight() / 2f + 50, 0);
+
+        Label winLabel = victoryContainer.addChild(new Label("¡Victoria!"));
+        winLabel.setFontSize(30);
+        winLabel.setColor(ColorRGBA.Green);
+
+        Button retryButton = victoryContainer.addChild(new Button("Jugar de nuevo"));
+        retryButton.addClickCommands((Button btn) -> restartGame());
+    }
+
     private void restartGame() {
         resetGame();
     }
-} 
+
+    private void addCrosshair() {
+        BitmapText crosshair = new BitmapText(guiFont, false);
+        crosshair.setSize(guiFont.getCharSet().getRenderedSize() * 2);
+        crosshair.setText("+");
+        crosshair.setColor(ColorRGBA.White);
+        crosshair.setLocalTranslation(
+            cam.getWidth() / 2f - crosshair.getLineWidth() / 2,
+            cam.getHeight() / 2f + crosshair.getLineHeight() / 2,
+            0
+        );
+        guiNode.attachChild(crosshair);
+    }
+}
