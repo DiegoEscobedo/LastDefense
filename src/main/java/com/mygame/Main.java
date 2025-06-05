@@ -6,6 +6,7 @@ import com.jme3.bullet.BulletAppState;
 import com.jme3.bullet.collision.PhysicsCollisionObject;
 import com.jme3.bullet.collision.PhysicsRayTestResult;
 import com.jme3.bullet.collision.shapes.BoxCollisionShape; // NUEVA IMPORTACIÓN para forma de caja
+import com.jme3.bullet.collision.shapes.CompoundCollisionShape;
 import com.jme3.bullet.control.BetterCharacterControl;
 import com.jme3.bullet.control.RigidBodyControl;
 import com.jme3.collision.CollisionResults;
@@ -61,7 +62,7 @@ public class Main extends SimpleApplication {
     public void simpleInitApp() {
         // Configuración básica de la cámara y entrada
         flyCam.setEnabled(true);
-        flyCam.setMoveSpeed(10f);
+        flyCam.setRotationSpeed(10f);
         inputManager.setCursorVisible(false);
 
         // Inicializar BulletAppState una vez para la simulación física
@@ -100,6 +101,7 @@ public class Main extends SimpleApplication {
         // (radio, altura, masa) y maneja la detección de colisiones.
         playerControl = new BetterCharacterControl(1.5f, 6f, 80f); // Radio, Altura, Masa
         playerControl.setGravity(new Vector3f(0, -20f, 0)); // Establecer gravedad para el jugador
+        
         playerNode.addControl(playerControl); // Adjuntar el control al nodo del jugador
     }
 
@@ -181,45 +183,28 @@ public class Main extends SimpleApplication {
         // Asegurar que la carpeta Assets esté registrada para la carga de modelos.
         assetManager.registerLocator("Assets/", FileLocator.class);
         Spatial enemy = assetManager.loadModel("Models/insectoid_monster_rig.j3o");
-        enemy.setLocalTranslation(new Vector3f(0, 0, -10 - offsetZ)); // Establecer posición inicial
+        enemy.setLocalTranslation(new Vector3f(0, 0, -30 - offsetZ)); // Establecer posición inicial
         enemy.setName("Enemy"); // Asignar un nombre para identificación durante las comprobaciones de colisión
         rootNode.attachChild(enemy); // Añadir el enemigo al grafo de escena
         enemies.add(enemy); // Añadir a la lista de enemigos activos para seguimiento
 
-        // --- AJUSTE DE LA FORMA DE COLISIÓN DEL ENEMIGO ---
-        // Observa la visualización de depuración de Bullet (las líneas azules, que ahora serán cajas)
-        // y ajusta estos valores para que la forma de colisión abarque bien el cuerpo principal de tu insectoide.
-        // Dado que tu modelo es bajo y ancho, una BoxCollisionShape es más adecuada que una cápsula vertical.
+        float boxXExtent = 0.2f;
+        float boxYExtent = 0.35f;
+        float boxZExtent = 0.2f;
 
-        // Ajusta estos valores (medio ancho, media altura, media profundidad/longitud)
-        // para que la caja se ajuste visualmente al cuerpo de tu insectoide.
-        float boxXExtent = 2.5f; // Medio ancho del insectoide (ajusta según tu modelo)
-        float boxYExtent = 0.75f; // Media altura del insectoide (ajusta según tu modelo)
-        float boxZExtent = 3.0f; // Media profundidad/longitud del insectoide (ajusta según tu modelo)
+        BoxCollisionShape boxShape = new BoxCollisionShape(new Vector3f(boxXExtent, boxYExtent, boxZExtent));
+        CompoundCollisionShape compoundShape = new CompoundCollisionShape();
 
-        BoxCollisionShape enemyShape = new BoxCollisionShape(new Vector3f(boxXExtent, boxYExtent, boxZExtent));
+        // Offset centrado y más abajo
+        Vector3f boxOffset = new Vector3f(0, 0.35f, -0.2f);
+        compoundShape.addChildShape(boxShape, boxOffset);
 
-        // Offset para alinear la caja con el enemigo.
-        // El origen de la caja (0,0,0) está en su centro.
-        // Si el origen de tu modelo 3D está en la base (pies) del insectoide,
-        // el offset en Y debe ser igual a la media altura (boxYExtent) para que la base de la caja esté en Y=0.
-        // Luego, ajustamos el Y y el Z para que concuerde con la imagen que proporcionaste.
-        // Ajustado:
-        // - Y: boxYExtent (para que la base de la caja esté en el origen del modelo) + 0.2f (un pequeño ajuste hacia arriba)
-        // - Z: -0.5f (para mover la caja hacia atrás, ajusta este valor si es necesario)
-        Vector3f boxOffset = new Vector3f(0, boxYExtent + 0.2f, -0.5f); 
+        RigidBodyControl enemyPhys = new RigidBodyControl(compoundShape, 0f);
+        enemy.addControl(enemyPhys);
+        enemyPhys.setKinematic(true);
 
-
-        RigidBodyControl enemyPhys = new RigidBodyControl(enemyShape, 0f);
-        enemy.addControl(enemyPhys); // Añadir el control al espacial del enemigo
-        enemyPhys.setKinematic(true); // Asegura que el control siga el movimiento del espacial.
-
-        // Aplicar el offset a la posición física del RigidBodyControl.
-        // Esto es crucial para que la forma de colisión esté correctamente alineada con el modelo visual.
-        enemyPhys.setPhysicsLocation(enemy.getLocalTranslation().add(boxOffset));
-
-        // Añadir el control físico del enemigo al espacio físico.
         bulletAppState.getPhysicsSpace().add(enemyPhys);
+
 
         System.out.println("Enemigo añadido: " + enemy.getName() + " en " + enemy.getLocalTranslation() + " con Box Extents:" + boxXExtent + "," + boxYExtent + "," + boxZExtent);
     }
@@ -374,7 +359,7 @@ public class Main extends SimpleApplication {
         if (left)     walkDirection.addLocal(cam.getLeft().setY(0).normalizeLocal());
         if (right)    walkDirection.addLocal(cam.getLeft().setY(0).negate().normalizeLocal());
 
-        playerControl.setWalkDirection(walkDirection.mult(5));
+        playerControl.setWalkDirection(walkDirection.mult(5f));
         cam.setLocation(playerControl.getSpatial().getWorldTranslation().add(0, 2, 0));
     }
 
