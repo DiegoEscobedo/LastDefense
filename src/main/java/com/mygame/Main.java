@@ -1,12 +1,14 @@
 package com.mygame;
 
 import com.jme3.app.SimpleApplication;
+import com.jme3.asset.AssetManager;
 import com.jme3.asset.plugins.FileLocator;
 import com.jme3.bullet.BulletAppState;
 import com.jme3.bullet.collision.PhysicsCollisionObject;
 import com.jme3.bullet.collision.PhysicsRayTestResult;
-import com.jme3.bullet.collision.shapes.BoxCollisionShape; // NUEVA IMPORTACIÓN para forma de caja
+import com.jme3.bullet.collision.shapes.BoxCollisionShape;
 import com.jme3.bullet.collision.shapes.CompoundCollisionShape;
+import com.jme3.bullet.collision.shapes.SphereCollisionShape;
 import com.jme3.bullet.control.BetterCharacterControl;
 import com.jme3.bullet.control.RigidBodyControl;
 import com.jme3.collision.CollisionResults;
@@ -16,9 +18,12 @@ import com.jme3.input.MouseInput;
 import com.jme3.input.controls.ActionListener;
 import com.jme3.input.controls.KeyTrigger;
 import com.jme3.input.controls.MouseButtonTrigger;
+import com.jme3.light.AmbientLight;
 import com.jme3.light.DirectionalLight;
 import com.jme3.material.Material;
+import com.jme3.material.RenderState;
 import com.jme3.math.ColorRGBA;
+import com.jme3.math.FastMath; // Necesario para FastMath.PI si rotas paredes
 import com.jme3.math.Ray;
 import com.jme3.math.Vector3f;
 import com.jme3.renderer.queue.RenderQueue;
@@ -26,6 +31,7 @@ import com.jme3.scene.Geometry;
 import com.jme3.scene.Node;
 import com.jme3.scene.Spatial;
 import com.jme3.scene.shape.Box;
+import com.jme3.scene.shape.Sphere;
 import com.simsilica.lemur.Button;
 import com.simsilica.lemur.Container;
 import com.simsilica.lemur.GuiGlobals;
@@ -37,6 +43,10 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Collections;
+import java.util.Random; // Importar para generación aleatoria
+import java.util.logging.Level; // Para debug de AssetManager
+import java.util.logging.Logger; // Para debug de AssetManager
+
 
 public class Main extends SimpleApplication {
 
@@ -53,6 +63,15 @@ public class Main extends SimpleApplication {
     // Para la visualización del rayo de depuración
     private Geometry debugRayGeometry;
 
+    // Instancia de Random para generar números aleatorios (para enemigos)
+    private Random random = new Random(); 
+    
+    private float spawnTimer = 0f;
+    private float gameTimer = 0f;
+    private final float SPAWN_INTERVAL = 2f; // Generar un enemigo cada 2 segundos
+    private final float GAME_DURATION = 60f; // Duración del juego en segundos (1 minuto)
+    private boolean spawningActive = false;
+
     public static void main(String[] args) {
         Main app = new Main();
         app.start();
@@ -65,16 +84,20 @@ public class Main extends SimpleApplication {
         flyCam.setRotationSpeed(10f);
         inputManager.setCursorVisible(false);
 
+        // Opcional: Habilitar logging detallado para el AssetManager
+        Logger.getLogger(AssetManager.class.getName()).setLevel(Level.FINER);
+
         // Inicializar BulletAppState una vez para la simulación física
         bulletAppState = new BulletAppState();
         stateManager.attach(bulletAppState);
         // Habilitar la visualización de depuración de Bullet
-        bulletAppState.setDebugEnabled(true);
-
+        // bulletAppState.setDebugEnabled(true); // Descomentar para ver colisiones físicas
 
         // Inicializar la librería GUI Lemur
+        System.setProperty("lemur.groovy.scripting", "false"); // Add this line
+
         GuiGlobals.initialize(this);
-        GuiGlobals.getInstance().getStyles().setDefaultStyle("default");
+        GuiGlobals.getInstance().getStyles().setDefaultStyle("default"); // Establecer el estilo por defecto
 
         // Añadir iluminación a la escena
         addLighting();
@@ -112,15 +135,16 @@ public class Main extends SimpleApplication {
      * genera enemigos, configura el suelo y actualiza el HUD.
      */
     private void resetGame() {
-        // Crucial: Desvincular y volver a vincular BulletAppState para limpiar efectivamente el espacio físico.
+        // Limpiar el espacio físico existente en lugar de recrear BulletAppState.
+        // Esto es más eficiente y menos propenso a errores.
         if (bulletAppState != null) {
-            stateManager.detach(bulletAppState);
+            bulletAppState.getPhysicsSpace().removeAll(rootNode); // Elimina los controles físicos de todos los hijos del rootNode
+        } else {
+            // Esto solo debería ocurrir la primera vez que se llama a resetGame()
+            // si bulletAppState aún no se inicializó en simpleInitApp, lo cual ya haces.
+            bulletAppState = new BulletAppState();
+            stateManager.attach(bulletAppState);
         }
-        bulletAppState = new BulletAppState();
-        stateManager.attach(bulletAppState);
-        // Asegurarse de que el debug esté habilitado después de re-adjuntar
-        bulletAppState.setDebugEnabled(true);
-
 
         // Limpiar todos los hijos del nodo raíz de la escena y del nodo GUI.
         rootNode.detachAllChildren();
@@ -137,14 +161,17 @@ public class Main extends SimpleApplication {
         playerControl.warp(new Vector3f(0, 5, 0));
 
         // Generar un nuevo conjunto de enemigos para la ronda actual del juego.
-        for (int i = 0; i < 5; i++) {
-            spawnEnemy(i * 6);
-        }
+        float floorLimit = 45f; // Rango para spawn, ajustado para no estar en el borde
+        int numberOfEnemies = 15; // Cantidad de enemigos a spawnear
 
+        gameTimer = 0f;
+        spawnTimer = 0f;
+        spawningActive = true;
+        
         // Crear y añadir el suelo a la escena.
         Box floorBox = new Box(50, 1, 50);
         Geometry floorGeo = new Geometry("Floor", floorBox);
-
+        
         // Registrar la carpeta "Assets/" como localizador para cargar modelos y texturas.
         assetManager.registerLocator("Assets/", FileLocator.class);
         // Cargar y aplicar la textura del suelo, haciendo que se repita para superficies más grandes.
@@ -155,7 +182,6 @@ public class Main extends SimpleApplication {
         floorMat.setTexture("DiffuseMap", floorTexture);
         floorMat.setBoolean("UseMaterialColors", true);
         floorMat.setColor("Diffuse", ColorRGBA.White);
-
         floorGeo.setMaterial(floorMat);
         floorGeo.setLocalTranslation(0, -1, 0); // Posicionar el suelo debajo del jugador
         rootNode.attachChild(floorGeo);
@@ -164,7 +190,9 @@ public class Main extends SimpleApplication {
         RigidBodyControl floorPhys = new RigidBodyControl(0.0f);
         floorGeo.addControl(floorPhys);
         bulletAppState.getPhysicsSpace().add(floorPhys);
-
+            
+        addWallsAroundFloor();
+        
         // Reiniciar la salud del jugador y actualizar el Heads-Up Display (HUD).
         playerHealth = 100;
         // Reinicializar los elementos del HUD de Lemur, ya que fueron desvinculados por guiNode.detachAllChildren().
@@ -175,39 +203,40 @@ public class Main extends SimpleApplication {
         addCrosshair();
     }
 
-    /**
-     * Genera un modelo de enemigo con un desplazamiento Z especificado desde el origen.
-     * @param offsetZ El desplazamiento de la coordenada Z para la posición de generación del enemigo.
-     */
-    private void spawnEnemy(float offsetZ) {
+    // Modifica el método para aceptar un Vector3f
+    private void spawnEnemy(Vector3f position) {
         // Asegurar que la carpeta Assets esté registrada para la carga de modelos.
         assetManager.registerLocator("Assets/", FileLocator.class);
-        Spatial enemy = assetManager.loadModel("Models/insectoid_monster_rig.j3o");
-        enemy.setLocalTranslation(new Vector3f(0, 0, -30 - offsetZ)); // Establecer posición inicial
-        enemy.setName("Enemy"); // Asignar un nombre para identificación durante las comprobaciones de colisión
-        rootNode.attachChild(enemy); // Añadir el enemigo al grafo de escena
-        enemies.add(enemy); // Añadir a la lista de enemigos activos para seguimiento
 
-        float boxXExtent = 0.2f;
-        float boxYExtent = 0.35f;
-        float boxZExtent = 0.2f;
+        // Cargar modelo del enemigo
+        Node enemy = (Node) assetManager.loadModel("Models/insectoid_monster_rig.j3o");
+        enemy.setLocalTranslation(position); // Usa la posición recibida
+        enemy.setName("Enemy");
 
-        BoxCollisionShape boxShape = new BoxCollisionShape(new Vector3f(boxXExtent, boxYExtent, boxZExtent));
-        CompoundCollisionShape compoundShape = new CompoundCollisionShape();
+        // Añadir al grafo de escena
+        rootNode.attachChild(enemy);
+        enemies.add(enemy);
 
-        // Offset centrado y más abajo
-        Vector3f boxOffset = new Vector3f(0, 0.35f, -0.2f);
-        compoundShape.addChildShape(boxShape, boxOffset);
+        // Agregar una esfera roja visible como hijo del enemigo (representa el hitbox)
+        Sphere esfera = new Sphere(20, 20, 0.25f); // Resolución y radio
+        Geometry esferaGeo = new Geometry("EnemyHitbox", esfera);
+        Material mat = new Material(assetManager, "Common/MatDefs/Misc/Unshaded.j3md");
+        mat.setColor("Color", ColorRGBA.Red);
+        esferaGeo.setMaterial(mat);
+        esferaGeo.setLocalTranslation(0, 0.35f, -0.2f); // Posición relativa al enemigo
+        enemy.attachChild(esferaGeo); // Visiblemente es parte del enemigo
 
-        RigidBodyControl enemyPhys = new RigidBodyControl(compoundShape, 0f);
+        // Crear colisión con forma de esfera
+        SphereCollisionShape sphereShape = new SphereCollisionShape(0.55f);
+        RigidBodyControl enemyPhys = new RigidBodyControl(sphereShape, 0f);
         enemy.addControl(enemyPhys);
-        enemyPhys.setKinematic(true);
+        enemyPhys.setKinematic(true); // Para que se muevan por script, no por físicas
 
         bulletAppState.getPhysicsSpace().add(enemyPhys);
 
-
-        System.out.println("Enemigo añadido: " + enemy.getName() + " en " + enemy.getLocalTranslation() + " con Box Extents:" + boxXExtent + "," + boxYExtent + "," + boxZExtent);
+        System.out.println("Enemigo añadido: " + enemy.getName() + " en " + enemy.getLocalTranslation());
     }
+
 
     /**
      * Configura el mapeo de teclas de entrada para el movimiento del jugador (W, A, S, D) y el disparo (Botón izquierdo del ratón).
@@ -352,6 +381,29 @@ public class Main extends SimpleApplication {
                 }
             }
         }
+        
+        if (spawningActive) {
+            gameTimer += tpf; // Incrementa el temporizador general del juego
+            spawnTimer += tpf; // Incrementa el temporizador de spawn
+
+            // Generar un enemigo si el tiempo de spawn ha pasado
+            if (spawnTimer >= SPAWN_INTERVAL) {
+                float floorLimit = 45f; // Asegúrate de que esta variable esté accesible o re-declarada aquí
+                float randomX = (random.nextFloat() * 2 * floorLimit) - floorLimit;
+                float randomZ = (random.nextFloat() * 2 * floorLimit) - floorLimit;
+                Vector3f spawnPosition = new Vector3f(randomX, 2f, randomZ);
+                spawnEnemy(spawnPosition);
+                spawnTimer -= SPAWN_INTERVAL; // Reinicia el temporizador de spawn (o ponlo a 0f)
+            }
+
+            // Detener la generación después de la duración del juego
+            if (gameTimer >= GAME_DURATION) {
+                spawningActive = false; // Desactiva la generación de enemigos
+                System.out.println("¡Se acabó el tiempo de generación de enemigos!");
+                // Aquí podrías añadir lógica adicional si no quedan enemigos
+                // pero ya no se generarán más.
+            }
+        }
 
         Vector3f walkDirection = new Vector3f();
         if (forward)  walkDirection.addLocal(cam.getDirection().setY(0).normalizeLocal());
@@ -402,7 +454,7 @@ public class Main extends SimpleApplication {
 
     private void addCrosshair() {
         BitmapText crosshair = new BitmapText(guiFont, false);
-        crosshair.setSize(guiFont.getCharSet().getRenderedSize() * 2);
+        crosshair.setSize(guiFont.getCharSet().getRenderedSize() * 1);
         crosshair.setText("+");
         crosshair.setColor(ColorRGBA.White);
         crosshair.setLocalTranslation(
@@ -412,12 +464,33 @@ public class Main extends SimpleApplication {
         );
         guiNode.attachChild(crosshair);
     }
-
+    
     private void addLighting() {
-        DirectionalLight sun = new DirectionalLight();
-        sun.setDirection(new Vector3f(-1, -2, -3).normalizeLocal());
-        sun.setColor(ColorRGBA.White);
-        rootNode.addLight(sun);
+
+        // En addLighting()
+        // Luz principal (ejemplo)
+        DirectionalLight sun1 = new DirectionalLight();
+        sun1.setDirection(new Vector3f(-1, -1, -1).normalizeLocal());
+        sun1.setColor(ColorRGBA.White.mult(0.7f)); // Un poco menos intensa para combinar
+        rootNode.addLight(sun1);
+
+        // Segunda luz direccional desde otra dirección (ejemplo: desde el +Z, +X)
+        DirectionalLight sun2 = new DirectionalLight();
+        sun2.setDirection(new Vector3f(-1, -1, 1).normalizeLocal()); // Luz de "relleno"
+        sun2.setColor(ColorRGBA.White.mult(0.3f)); // Más suave
+        rootNode.addLight(sun2);
+        
+        // Segunda luz direccional desde otra dirección (ejemplo: desde el +Z, +X)
+        DirectionalLight sun3 = new DirectionalLight();
+        sun3.setDirection(new Vector3f(1, -1, 1).normalizeLocal()); // Luz de "relleno"
+        sun3.setColor(ColorRGBA.White.mult(0.3f)); // Más suave
+        rootNode.addLight(sun3);
+       
+
+        // Asegúrate de que la luz ambiental siga siendo razonable, ej:
+        AmbientLight ambient = new AmbientLight();
+        ambient.setColor(ColorRGBA.Gray.mult(0.9f)); // O ColorRGBA.White.mult(0.5f);
+        rootNode.addLight(ambient);
     }
 
     /**
@@ -451,5 +524,73 @@ public class Main extends SimpleApplication {
         debugRayGeometry.lookAt(rayEnd, Vector3f.UNIT_Y);
 
         rootNode.attachChild(debugRayGeometry);
+    }
+    
+    /**
+    * Crea paredes alrededor del suelo para evitar que el jugador se caiga.
+    */
+    private void addWallsAroundFloor() {
+        float floorSize = 50f;     // La mitad del tamaño del suelo
+        float wallThickness = 1f;  // Grosor de las paredes
+        float wallHeight = 10f;    // Altura de las paredes
+
+        // En addWallsAroundFloor()
+        Texture wallTexture = assetManager.loadTexture("Textures/OIP.jpg"); // Vuelve a tu textura
+        wallTexture.setWrap(Texture.WrapMode.Repeat);
+        Material wallMat = new Material(assetManager, "Common/MatDefs/Light/Lighting.j3md");
+        wallMat.setTexture("DiffuseMap", wallTexture);
+        wallMat.setBoolean("UseMaterialColors", true);
+        wallMat.setColor("Diffuse", ColorRGBA.White);
+        wallMat.getAdditionalRenderState().setFaceCullMode(RenderState.FaceCullMode.Off);
+                // Puedes mantener el FaceCullMode.Off aunque en Unshaded no es tan crítico, pero no hace daño
+        wallMat.getAdditionalRenderState().setFaceCullMode(RenderState.FaceCullMode.Off);
+
+        // Pared - Norte (Ahora su cara interior mira hacia -Z)
+        Box northWallBox = new Box(floorSize, wallHeight, wallThickness);
+        Geometry northWall = new Geometry("NorthWall", northWallBox);
+        northWall.setMaterial(wallMat);
+        // Movemos la pared hacia afuera un poco para que el centro de la caja esté en floorSize + wallThickness/2
+        // Esto hace que la cara que mira hacia -Z (hacia el centro del mapa) sea la visible.
+        northWall.setLocalTranslation(0, wallHeight / 2f, floorSize + wallThickness / 2f);
+        rootNode.attachChild(northWall);
+        RigidBodyControl northWallPhys = new RigidBodyControl(0.0f);
+        northWall.addControl(northWallPhys);
+        bulletAppState.getPhysicsSpace().add(northWallPhys);
+
+        // Pared - Sur (Ahora su cara interior mira hacia +Z)
+        Box southWallBox = new Box(floorSize, wallHeight, wallThickness);
+        Geometry southWall = new Geometry("SouthWall", southWallBox);
+        southWall.setMaterial(wallMat);
+        // Movemos la pared hacia afuera un poco para que el centro de la caja esté en -floorSize - wallThickness/2
+        // Esto hace que la cara que mira hacia +Z (hacia el centro del mapa) sea la visible.
+        southWall.setLocalTranslation(0, wallHeight / 2f, -(floorSize + wallThickness / 2f));
+        rootNode.attachChild(southWall);
+        RigidBodyControl southWallPhys = new RigidBodyControl(0.0f);
+        southWall.addControl(southWallPhys);
+        bulletAppState.getPhysicsSpace().add(southWallPhys);
+
+        // Pared - Este (Ahora su cara interior mira hacia -X)
+        Box eastWallBox = new Box(wallThickness, wallHeight, floorSize);
+        Geometry eastWall = new Geometry("EastWall", eastWallBox);
+        eastWall.setMaterial(wallMat);
+        // Movemos la pared hacia afuera un poco para que el centro de la caja esté en floorSize + wallThickness/2
+        // Esto hace que la cara que mira hacia -X (hacia el centro del mapa) sea la visible.
+        eastWall.setLocalTranslation(floorSize + wallThickness / 2f, wallHeight / 2f, 0);
+        rootNode.attachChild(eastWall);
+        RigidBodyControl eastWallPhys = new RigidBodyControl(0.0f);
+        eastWall.addControl(eastWallPhys);
+        bulletAppState.getPhysicsSpace().add(eastWallPhys);
+
+        // Pared - Oeste (Ahora su cara interior mira hacia +X)
+        Box westWallBox = new Box(wallThickness, wallHeight, floorSize);
+        Geometry westWall = new Geometry("WestWall", westWallBox);
+        westWall.setMaterial(wallMat);
+        // Movemos la pared hacia afuera un poco para que el centro de la caja esté en -floorSize - wallThickness/2
+        // Esto hace que la cara que mira hacia +X (hacia el centro del mapa) sea la visible.
+        westWall.setLocalTranslation(-(floorSize + wallThickness / 2f), wallHeight / 2f, 0);
+        rootNode.attachChild(westWall);
+        RigidBodyControl westWallPhys = new RigidBodyControl(0.0f);
+        westWall.addControl(westWallPhys);
+        bulletAppState.getPhysicsSpace().add(westWallPhys);
     }
 }
