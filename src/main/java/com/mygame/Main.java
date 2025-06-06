@@ -193,6 +193,30 @@ public class Main extends SimpleApplication {
             
         addWallsAroundFloor();
         
+                // --- Agregar el Techo ---
+        float floorSize = 50f; // Usa el mismo tamaño que tu suelo y paredes
+        float wallHeight = 10f; // Usa la misma altura que tus paredes
+
+        Box ceilingBox = new Box(floorSize, 0.5f, floorSize); // Una caja del tamaño del suelo pero delgada
+        Geometry ceilingGeo = new Geometry("Ceiling", ceilingBox);
+
+        // Cargar y aplicar la textura del techo
+        Texture ceilingTexture = assetManager.loadTexture("Textures/sky2.jpg"); // <-- ¡CAMBIA ESTO A TU RUTA DE TEXTURA!
+        ceilingTexture.setWrap(Texture.WrapMode.Repeat); // Para que la textura se repita si el techo es grande
+
+        Material ceilingMat = new Material(assetManager, "Common/MatDefs/Light/Lighting.j3md");
+        ceilingMat.setTexture("DiffuseMap", ceilingTexture);
+        ceilingMat.setBoolean("UseMaterialColors", true);
+        ceilingMat.setColor("Diffuse", ColorRGBA.White);
+        // Opcional: si la textura tiene un lado "interior" y "exterior" y quieres que se vea de ambos lados
+        ceilingMat.getAdditionalRenderState().setFaceCullMode(RenderState.FaceCullMode.Off);
+
+        ceilingGeo.setMaterial(ceilingMat);
+        // Posicionar el techo justo encima de las paredes
+        // La altura (Y) será la altura de la pared + la mitad del grosor del techo
+        ceilingGeo.setLocalTranslation(0, 40f + 0.5f, 0); // 0.5f es el grosor del techo en la Box
+        rootNode.attachChild(ceilingGeo);
+        
         // Reiniciar la salud del jugador y actualizar el Heads-Up Display (HUD).
         playerHealth = 100;
         // Reinicializar los elementos del HUD de Lemur, ya que fueron desvinculados por guiNode.detachAllChildren().
@@ -485,6 +509,13 @@ public class Main extends SimpleApplication {
         sun3.setDirection(new Vector3f(1, -1, 1).normalizeLocal()); // Luz de "relleno"
         sun3.setColor(ColorRGBA.White.mult(0.3f)); // Más suave
         rootNode.addLight(sun3);
+        
+        DirectionalLight ceilingLight = new DirectionalLight();
+        // Esta dirección es clave: apunta directamente hacia arriba
+        ceilingLight.setDirection(new Vector3f(0, 1, 0).normalizeLocal());
+        // Puedes ajustar la intensidad (ej. 0.5f) y el color si quieres un efecto particular
+        ceilingLight.setColor(ColorRGBA.White.mult(0.5f)); // Una luz más suave
+        rootNode.addLight(ceilingLight);
        
 
         // Asegúrate de que la luz ambiental siga siendo razonable, ej:
@@ -532,7 +563,7 @@ public class Main extends SimpleApplication {
     private void addWallsAroundFloor() {
         float floorSize = 50f;     // La mitad del tamaño del suelo
         float wallThickness = 1f;  // Grosor de las paredes
-        float wallHeight = 10f;    // Altura de las paredes
+        float wallHeight = 30f;    // Altura de las paredes
 
         // En addWallsAroundFloor()
         Texture wallTexture = assetManager.loadTexture("Textures/OIP.jpg"); // Vuelve a tu textura
