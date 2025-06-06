@@ -424,6 +424,7 @@ public class Main extends SimpleApplication {
             if (gameTimer >= GAME_DURATION) {
                 spawningActive = false; // Desactiva la generación de enemigos
                 System.out.println("¡Se acabó el tiempo de generación de enemigos!");
+                showVictory();
                 // Aquí podrías añadir lógica adicional si no quedan enemigos
                 // pero ya no se generarán más.
             }
