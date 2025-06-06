@@ -3,6 +3,7 @@ package com.mygame;
 import com.jme3.app.SimpleApplication;
 import com.jme3.asset.AssetManager;
 import com.jme3.asset.plugins.FileLocator;
+import com.jme3.audio.AudioNode;
 import com.jme3.bullet.BulletAppState;
 import com.jme3.bullet.collision.PhysicsCollisionObject;
 import com.jme3.bullet.collision.PhysicsRayTestResult;
@@ -71,7 +72,8 @@ public class Main extends SimpleApplication {
     private final float SPAWN_INTERVAL = 2f; // Generar un enemigo cada 2 segundos
     private final float GAME_DURATION = 60f; // Duración del juego en segundos (1 minuto)
     private boolean spawningActive = false;
-
+    private AudioNode enemyEliminationSound;
+    
     public static void main(String[] args) {
         Main app = new Main();
         app.start();
@@ -107,6 +109,14 @@ public class Main extends SimpleApplication {
 
         // Crear componentes del jugador (Nodo y Control) solo una vez al iniciar la aplicación
         createPlayerComponents();
+        
+
+
+        enemyEliminationSound = new AudioNode(assetManager, "Sounds/roblox-death-sound_1_wnMo9iW.wav", false); // <-- ¡CAMBIA LA RUTA!
+        enemyEliminationSound.setPositional(false); // Si es false, el sonido no dependerá de la posición. Si es true, sí.
+        enemyEliminationSound.setVolume(2); // Ajusta el volumen (1 es normal, 2 es el doble, etc.)
+        enemyEliminationSound.setLooping(false); // No queremos que el sonido se repita en bucle
+        rootNode.attachChild(enemyEliminationSound);
 
         // Realizar la configuración inicial del juego y reinicio
         resetGame();
@@ -351,6 +361,7 @@ public class Main extends SimpleApplication {
             // Comprobamos si el Spatial golpeado es uno de nuestros enemigos.
             if (enemies.contains(hitSpatial)) {
                 enemyToRemove = hitSpatial;
+                enemyEliminationSound.playInstance();
                 System.out.println("  ¡ENEMIGO IDENTIFICADO para eliminar! Nombre: " + enemyToRemove.getName());
             } else {
                 System.out.println("  El objeto físico golpeado NO es un enemigo en nuestra lista 'enemies'. Es: " + (hitSpatial != null ? hitSpatial.getName() : "null"));
@@ -397,6 +408,11 @@ public class Main extends SimpleApplication {
                 if (enemyPhys != null) {
                     bulletAppState.getPhysicsSpace().remove(enemyPhys);
                 }
+
+                // --- ¡REPRODUCE EL SONIDO AQUÍ TAMBIÉN! ---
+                enemyEliminationSound.playInstance(); // Reproduce una instancia del sonido
+                // --- FIN REPRODUCE SONIDO ---
+
                 iterator.remove();
                 System.out.println("Enemigo " + enemy.getName() + " ELIMINADO por proximidad.");
 
